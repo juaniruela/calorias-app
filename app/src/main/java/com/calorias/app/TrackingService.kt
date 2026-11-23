@@ -127,8 +127,15 @@ class TrackingService : Service() {
             store.activeTypeId = it.id
         }
 
-        val addMeters = if (active.mode == Mode.DISTANCE) dist else 0.0
-        dao.addActivity(day.id, active.id, dtSec, addMeters)
+        // Mixta: sin movimiento el tiempo cuenta como estático; con movimiento cuenta la distancia.
+        val moving = dist >= s.moveThresholdM
+        val addMeters = when (active.mode) {
+            Mode.DISTANCE -> dist
+            Mode.MIXED -> if (moving) dist else 0.0
+            Mode.TIME -> 0.0
+        }
+        val staticSec = if (active.mode == Mode.MIXED && !moving) dtSec else 0L
+        dao.addActivity(day.id, active.id, dtSec, addMeters, staticSec)
         DayController.refreshWidget(this)
     }
 

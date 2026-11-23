@@ -23,7 +23,8 @@ data class DaySummary(
     val balanceKcal: Double,
     /** Estimación de cambio de peso en gramos. Positivo = sube, negativo = baja. */
     val gramsChange: Double,
-    val byType: List<TypeLine>
+    val byType: List<TypeLine>,
+    val meals: Int
 )
 
 object Calc {
@@ -36,6 +37,9 @@ object Calc {
     fun kcalOf(t: ActivityType, a: DayActivity, weightKg: Double): Double = when (t.mode) {
         Mode.DISTANCE -> t.factor * weightKg * a.meters / 1000.0
         Mode.TIME -> t.factor * weightKg * a.seconds / 3600.0
+        // Mixta: tiempo parado a kcal/h + distancia en movimiento a kcal/km
+        Mode.MIXED -> t.factor * weightKg * (a.staticSeconds ?: 0L) / 3600.0 +
+            (t.factorDistance ?: 0.0) * weightKg * a.meters / 1000.0
     }
 
     fun summarize(
@@ -56,7 +60,7 @@ object Calc {
         val bmr = bmrPerHour(s) * hours
         val intake = food.sumOf { it.kcal }
         val balance = intake - (bmr + activity)
-        val meters = lines.filter { it.type.mode == Mode.DISTANCE }.sumOf { it.meters }
+        val meters = lines.filter { it.type.mode != Mode.TIME }.sumOf { it.meters }
         return DaySummary(
             bmrKcal = bmr,
             activityKcal = activity,
@@ -66,7 +70,8 @@ object Calc {
             activeSeconds = lines.sumOf { it.seconds },
             balanceKcal = balance,
             gramsChange = balance / max(1.0, s.kcalPerKgFat) * 1000.0,
-            byType = lines
+            byType = lines,
+            meals = food.size
         )
     }
 

@@ -11,15 +11,17 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Update
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
-enum class Mode { DISTANCE, TIME }
+/** DISTANCE: por km. TIME: por tiempo. MIXED: tiempo cuando está parado + distancia cuando se mueve. */
+enum class Mode { DISTANCE, TIME, MIXED }
 
 /**
  * Tipo de actividad creado por el usuario.
- * factor = gasto NETO extra (por encima del basal) por kg y por km (DISTANCE)
- *          o por kg y por hora (TIME). Al crearla se convierte desde kcal/km o kcal/h.
+ * factor = gasto NETO extra por kg y por km (DISTANCE) o por kg y por hora (TIME y MIXED parado).
+ * factorDistance = solo MIXED: gasto NETO extra por kg y por km cuando hay movimiento.
  */
 @Entity(tableName = "activity_types")
 data class ActivityType(
@@ -28,6 +30,7 @@ data class ActivityType(
     val emoji: String,
     val mode: Mode,
     val factor: Double,
+    val factorDistance: Double? = null,
     val isBike: Boolean = false,
     val isRest: Boolean = false,
     val isDefault: Boolean = false
@@ -48,16 +51,29 @@ data class DayActivity(
     val dayId: Long,
     val typeId: Long,
     val seconds: Long = 0,
-    val meters: Double = 0.0
+    val meters: Double = 0.0,
+    /** Solo MIXED: segundos en los que no hubo movimiento. */
+    val staticSeconds: Long? = null
 )
 
+/** Comida registrada en una jornada (copia de nombre, icono y kcal en el momento de añadirla). */
 @Entity(tableName = "food")
 data class FoodEntry(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val dayId: Long,
     val name: String,
     val kcal: Double,
-    val time: Long
+    val time: Long,
+    val emoji: String? = null
+)
+
+/** Catálogo de alimentos reutilizables. */
+@Entity(tableName = "food_catalog")
+data class FoodItem(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val emoji: String,
+    val kcal: Double
 )
 
 @Dao
@@ -92,14 +108,20 @@ interface AppDao {
     @Query("SELECT * FROM days WHERE endedAt IS NULL ORDER BY id DESC LIMIT 1")
     fun observeOpenDay(): Flow<DayRecord?>
 
+    @Query("SELECT * FROM days WHERE date = :date ORDER BY id DESC LIMIT 1")
+    suspend fun lastDayOf(date: String): DayRecord?
+
     @Query("SELECT * FROM days ORDER BY id DESC")
     fun observeDays(): Flow<List<DayRecord>>
 
     @Query(
-        "INSERT INTO day_activity (dayId, typeId, seconds, meters) VALUES (:dayId, :typeId, :seconds, :meters) " +
-            "ON CONFLICT(dayId, typeId) DO UPDATE SET seconds = seconds + :seconds, meters = meters + :meters"
+        "INSERT INTO day_activity (dayId, typeId, seconds, meters, staticSeconds) " +
+            "VALUES (:dayId, :typeId, :seconds, :meters, :staticSeconds) " +
+            "ON CONFLICT(dayId, typeId) DO UPDATE SET " +
+            "seconds = seconds + :seconds, meters = meters + :meters, " +
+            "staticSeconds = COALESCE(staticSeconds, 0) + :staticSeconds"
     )
-    suspend fun addActivity(dayId: Long, typeId: Long, seconds: Long, meters: Double)
+    suspend fun addActivity(dayId: Long, typeId: Long, seconds: Long, meters: Double, staticSeconds: Long)
 
     @Query("SELECT * FROM day_activity WHERE dayId = :dayId")
     suspend fun dayActivities(dayId: Long): List<DayActivity>
@@ -118,11 +140,36 @@ interface AppDao {
 
     @Query("SELECT * FROM food WHERE dayId = :dayId ORDER BY time")
     fun observeFood(dayId: Long): Flow<List<FoodEntry>>
+
+    @Query("SELECT * FROM food_catalog ORDER BY name")
+    fun observeCatalog(): Flow<List<FoodItem>>
+
+    @Insert
+    suspend fun insertCatalog(f: FoodItem): Long
+
+    @Update
+    suspend fun updateCatalog(f: FoodItem)
+
+    @Delete
+    suspend fun deleteCatalog(f: FoodItem)
+}
+
+/** v1 -> v2: actividad mixta, icono en comidas y catálogo de alimentos. Conserva los datos. */
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE activity_types ADD COLUMN factorDistance REAL")
+        db.execSQL("ALTER TABLE day_activity ADD COLUMN staticSeconds INTEGER")
+        db.execSQL("ALTER TABLE food ADD COLUMN emoji TEXT")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `food_catalog` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, `emoji` TEXT NOT NULL, `kcal` REAL NOT NULL)"
+        )
+    }
 }
 
 @Database(
-    entities = [ActivityType::class, DayRecord::class, DayActivity::class, FoodEntry::class],
-    version = 1,
+    entities = [ActivityType::class, DayRecord::class, DayActivity::class, FoodEntry::class, FoodItem::class],
+    version = 2,
     exportSchema = false
 )
 abstract class AppDb : RoomDatabase() {
@@ -134,6 +181,7 @@ abstract class AppDb : RoomDatabase() {
 
         fun get(ctx: Context): AppDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(ctx.applicationContext, AppDb::class.java, "calorias.db")
+                .addMigrations(MIGRATION_1_2)
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         // Actividades por defecto. Los usuarios pueden añadir más desde Ajustes.

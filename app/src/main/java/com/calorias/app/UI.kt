@@ -1,13 +1,18 @@
 package com.calorias.app
 
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -41,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -48,6 +54,14 @@ private val GOOD = Color(0xFF2E7D32)
 private val BAD = Color(0xFFC62828)
 
 private fun String.toDec(): Double? = replace(',', '.').toDoubleOrNull()
+
+private fun fmt(x: Double): String = String.format(java.util.Locale.US, "%.2f", x)
+
+private fun describe(t: ActivityType, w: Double): String = when (t.mode) {
+    Mode.DISTANCE -> "${Calc.num(t.factor * w, 2)} kcal/km"
+    Mode.TIME -> "${Calc.num(t.factor * w, 2)} kcal/h"
+    Mode.MIXED -> "${Calc.num(t.factor * w, 2)} kcal/h parado + ${Calc.num((t.factorDistance ?: 0.0) * w, 2)} kcal/km"
+}
 
 // ---------------------------------------------------------------- HOY
 
@@ -66,16 +80,17 @@ fun HomeScreen() {
     }
     val settings = remember(now) { store.load() }
     val types by dao.observeTypes().collectAsState(initial = emptyList())
+    val foods by dao.observeCatalog().collectAsState(initial = emptyList())
     val open by dao.observeOpenDay().collectAsState(initial = null)
     val dayId = open?.id ?: -1L
     val acts by remember(dayId) { dao.observeDayActivities(dayId) }.collectAsState(initial = emptyList())
-    val food by remember(dayId) { dao.observeFood(dayId) }.collectAsState(initial = emptyList())
+    val meals by remember(dayId) { dao.observeFood(dayId) }.collectAsState(initial = emptyList())
 
     var activeId by remember { mutableLongStateOf(store.activeTypeId) }
     LaunchedEffect(now) { activeId = store.activeTypeId }
-    var showFood by remember { mutableStateOf(false) }
+    var showMeal by remember { mutableStateOf(false) }
 
-    val summary = open?.let { Calc.summarize(settings, it, types, acts, food, now) }
+    val summary = open?.let { Calc.summarize(settings, it, types, acts, meals, now) }
 
     Column(
         Modifier
@@ -113,9 +128,9 @@ fun HomeScreen() {
             StatsCard(summary)
 
             Text("Actividad actual", style = MaterialTheme.typography.titleMedium)
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 types.forEach { t ->
                     FilterChip(
@@ -130,7 +145,7 @@ fun HomeScreen() {
                 }
             }
 
-            summary.byType.forEach { line ->
+            summary.byType.filter { it.seconds > 0 || it.meters > 0 }.forEach { line ->
                 Text(
                     "${line.type.emoji} ${line.type.name}: " +
                         "${Calc.num(line.seconds / 60.0)} min · " +
@@ -142,14 +157,17 @@ fun HomeScreen() {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Comidas", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = { showFood = true }) {
+                TextButton(onClick = { showMeal = true }) {
                     Icon(Icons.Default.Add, contentDescription = null)
                     Text("Añadir")
                 }
             }
-            food.forEach { f ->
+            meals.forEach { f ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("${Calc.hhmm(f.time)}  ${f.name}: ${Calc.num(f.kcal)} kcal", modifier = Modifier.weight(1f))
+                    Text(
+                        "${Calc.hhmm(f.time)}  ${f.emoji ?: "🍽️"} ${f.name}: ${Calc.num(f.kcal)} kcal",
+                        modifier = Modifier.weight(1f)
+                    )
                     IconButton(onClick = { scope.launch { dao.deleteFood(f) } }) {
                         Icon(Icons.Default.Delete, contentDescription = "Borrar")
                     }
@@ -159,14 +177,32 @@ fun HomeScreen() {
     }
 
     val current = open
-    if (showFood && current != null) {
-        FoodDialog(
-            onDismiss = { showFood = false },
-            onAdd = { name, kcal ->
+    if (showMeal && current != null) {
+        MealDialog(
+            foods = foods,
+            onDismiss = { showMeal = false },
+            onPick = { food ->
                 scope.launch {
-                    dao.insertFood(FoodEntry(dayId = current.id, name = name, kcal = kcal, time = System.currentTimeMillis()))
+                    dao.insertFood(
+                        FoodEntry(
+                            dayId = current.id, name = food.name, kcal = food.kcal,
+                            time = System.currentTimeMillis(), emoji = food.emoji
+                        )
+                    )
                 }
-                showFood = false
+                showMeal = false
+            },
+            onCreate = { name, kcal, emoji ->
+                scope.launch {
+                    dao.insertCatalog(FoodItem(name = name, emoji = emoji, kcal = kcal))
+                    dao.insertFood(
+                        FoodEntry(
+                            dayId = current.id, name = name, kcal = kcal,
+                            time = System.currentTimeMillis(), emoji = emoji
+                        )
+                    )
+                }
+                showMeal = false
             }
         )
     }
@@ -179,7 +215,7 @@ private fun StatsCard(s: DaySummary) {
             StatRow("Pasos", Calc.num(s.steps.toDouble()))
             StatRow("Distancia", "${Calc.num(s.meters / 1000, 2)} km")
             StatRow("Tiempo activo", "${s.activeSeconds / 60} min")
-            StatRow("Comida ingerida", "${Calc.num(s.intakeKcal)} kcal")
+            StatRow("Comida ingerida", "${Calc.num(s.intakeKcal)} kcal (${s.meals} comidas)")
             StatRow("Gasto (basal + actividad)", "${Calc.num(s.bmrKcal + s.activityKcal)} kcal")
             StatRow(
                 "Saldo", "${Calc.num(s.balanceKcal)} kcal",
@@ -201,33 +237,102 @@ private fun StatRow(label: String, value: String, color: Color = Color.Unspecifi
     }
 }
 
+/**
+ * Añadir comida: se elige del catálogo. Si el nombre no existe, se crea el alimento
+ * en el catálogo al añadir la comida del día.
+ */
 @Composable
-private fun FoodDialog(onDismiss: () -> Unit, onAdd: (String, Double) -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var kcal by remember { mutableStateOf("") }
+private fun MealDialog(
+    foods: List<FoodItem>,
+    onDismiss: () -> Unit,
+    onPick: (FoodItem) -> Unit,
+    onCreate: (String, Double, String) -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+    var kcalText by remember { mutableStateOf("") }
+    var emoji by remember { mutableStateOf("🍽️") }
+    val q = query.trim()
+    val matches = foods.filter { q.isEmpty() || it.name.contains(q, ignoreCase = true) }
+    val exact = foods.firstOrNull { it.name.equals(q, ignoreCase = true) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Añadir comida") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 OutlinedTextField(
-                    value = name, onValueChange = { name = it },
-                    label = { Text("Menú / alimento") }, singleLine = true
+                    value = query, onValueChange = { query = it },
+                    label = { Text("Buscar o nombre nuevo") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
-                    value = kcal, onValueChange = { kcal = it },
-                    label = { Text("Kcal") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                )
+                matches.forEach { f ->
+                    Text(
+                        "${f.emoji} ${f.name} · ${Calc.num(f.kcal)} kcal",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onPick(f) }
+                            .padding(vertical = 8.dp)
+                    )
+                }
+                if (exact == null && q.isNotEmpty()) {
+                    Text("Nuevo alimento: elige icono y kcal", style = MaterialTheme.typography.bodySmall)
+                    EmojiGrid(selected = emoji) { emoji = it }
+                    OutlinedTextField(
+                        value = kcalText, onValueChange = { kcalText = it },
+                        label = { Text("Kcal") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         },
         confirmButton = {
             TextButton(onClick = {
-                kcal.toDec()?.let { onAdd(name.ifBlank { "Comida" }, it) }
-            }) { Text("Añadir") }
+                if (exact != null) {
+                    onPick(exact)
+                } else {
+                    val k = kcalText.toDec() ?: return@TextButton
+                    if (q.isEmpty()) return@TextButton
+                    onCreate(q, k, emoji)
+                }
+            }) { Text(if (exact != null) "Añadir" else "Crear y añadir") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
     )
+}
+
+/** Cuadrícula de emoticonos; la seleccionada se resalta. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun EmojiGrid(selected: String, onPick: (String) -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .height(170.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            EMOJIS.forEach { e ->
+                Text(
+                    e,
+                    fontSize = 24.sp,
+                    modifier = Modifier
+                        .background(
+                            if (e == selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable { onPick(e) }
+                        .padding(6.dp)
+                )
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------- HISTORIAL
@@ -285,6 +390,7 @@ fun SettingsScreen() {
     val store = remember { SettingsStore(ctx) }
     val dao = remember { AppDb.get(ctx).dao() }
     val types by dao.observeTypes().collectAsState(initial = emptyList())
+    val foods by dao.observeCatalog().collectAsState(initial = emptyList())
 
     val s0 = remember { store.load() }
     var weight by remember { mutableStateOf(s0.weightKg.toString()) }
@@ -297,11 +403,14 @@ fun SettingsScreen() {
     var fast by remember { mutableStateOf(s0.fastKmh.toString()) }
     var veryFast by remember { mutableStateOf(s0.veryFastKmh.toString()) }
     var window by remember { mutableStateOf(s0.speedWindowMin.toString()) }
+    var moveThr by remember { mutableStateOf(s0.moveThresholdM.toString()) }
     var sHour by remember { mutableStateOf(s0.summaryHour.toString()) }
     var sMin by remember { mutableStateOf(s0.summaryMinute.toString()) }
     var tips by remember { mutableStateOf(s0.tips) }
     var showNew by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<ActivityType?>(null) }
+    var showNewFood by remember { mutableStateOf(false) }
+    var editingFood by remember { mutableStateOf<FoodItem?>(null) }
     var saved by remember { mutableStateOf(false) }
 
     val weightNow = weight.toDec() ?: s0.weightKg
@@ -318,6 +427,7 @@ fun SettingsScreen() {
             fastKmh = fast.toDec() ?: s0.fastKmh,
             veryFastKmh = veryFast.toDec() ?: s0.veryFastKmh,
             speedWindowMin = window.toIntOrNull()?.coerceAtLeast(1) ?: s0.speedWindowMin,
+            moveThresholdM = moveThr.toDec() ?: s0.moveThresholdM,
             summaryHour = sHour.toIntOrNull()?.coerceIn(0, 23) ?: s0.summaryHour,
             summaryMinute = sMin.toIntOrNull()?.coerceIn(0, 59) ?: s0.summaryMinute,
             tips = tips
@@ -349,6 +459,7 @@ fun SettingsScreen() {
         Text("Pasos y GPS", style = MaterialTheme.typography.titleMedium)
         Field("Longitud de paso (m)", stride) { stride = it; saved = false }
         Field("Intervalo GPS (s, aplica al iniciar el día)", gps) { gps = it; saved = false }
+        Field("Movimiento mínimo por lectura (m, actividad mixta)", moveThr) { moveThr = it; saved = false }
 
         Text("Reglas de velocidad", style = MaterialTheme.typography.titleMedium)
         Field("Solo bicicleta por encima de (km/h)", fast) { fast = it; saved = false }
@@ -377,10 +488,8 @@ fun SettingsScreen() {
         Text("Actividades", style = MaterialTheme.typography.titleMedium)
         types.forEach { t ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val perUnit = if (t.mode == Mode.DISTANCE) "kcal/km" else "kcal/h"
-                val shown = t.factor * weightNow
                 Text(
-                    "${t.emoji} ${t.name} · ${Calc.num(shown, 2)} $perUnit" +
+                    "${t.emoji} ${t.name} · ${describe(t, weightNow)}" +
                         (if (t.isBike) " · bici" else "") +
                         (if (t.isRest) " · descanso" else "") +
                         (if (t.isDefault) " · por defecto" else ""),
@@ -394,6 +503,20 @@ fun SettingsScreen() {
         }
         Button(onClick = { showNew = true }, modifier = Modifier.fillMaxWidth()) {
             Text("+ Nueva actividad")
+        }
+
+        Text("Alimentos", style = MaterialTheme.typography.titleMedium)
+        foods.forEach { f ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${f.emoji} ${f.name} · ${Calc.num(f.kcal)} kcal", Modifier.weight(1f))
+                TextButton(onClick = { editingFood = f }) { Text("Editar") }
+                IconButton(onClick = { scope.launch { dao.deleteCatalog(f) } }) {
+                    Icon(Icons.Default.Delete, contentDescription = "Borrar")
+                }
+            }
+        }
+        Button(onClick = { showNewFood = true }, modifier = Modifier.fillMaxWidth()) {
+            Text("+ Nuevo alimento")
         }
     }
 
@@ -409,6 +532,20 @@ fun SettingsScreen() {
                 }
                 showNew = false
                 editing = null
+            }
+        )
+    }
+
+    if (showNewFood || editingFood != null) {
+        FoodItemDialog(
+            initial = editingFood,
+            onDismiss = { showNewFood = false; editingFood = null },
+            onSave = { food ->
+                scope.launch {
+                    if (food.id == 0L) dao.insertCatalog(food) else dao.updateCatalog(food)
+                }
+                showNewFood = false
+                editingFood = null
             }
         )
     }
@@ -431,10 +568,50 @@ private fun Field(
     )
 }
 
+/** Alimento del catálogo: nombre, icono y kcal. */
+@Composable
+private fun FoodItemDialog(
+    initial: FoodItem?,
+    onDismiss: () -> Unit,
+    onSave: (FoodItem) -> Unit
+) {
+    var name by remember { mutableStateOf(initial?.name ?: "") }
+    var emoji by remember { mutableStateOf(initial?.emoji ?: "🍽️") }
+    var kcal by remember { mutableStateOf(initial?.let { fmt(it.kcal) } ?: "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "Nuevo alimento" else "Editar alimento") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(name, { name = it }, label = { Text("Nombre") }, singleLine = true)
+                OutlinedTextField(
+                    kcal, { kcal = it }, label = { Text("Kcal por ración") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                )
+                Text("Icono: $emoji")
+                EmojiGrid(selected = emoji) { emoji = it }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val k = kcal.toDec() ?: return@TextButton
+                if (name.isBlank()) return@TextButton
+                onSave(FoodItem(id = initial?.id ?: 0L, name = name.trim(), emoji = emoji, kcal = k))
+            }) { Text("Guardar") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
+}
+
 /**
  * Crea o edita una actividad. Transformación: se introduce kcal extra por km (distancia)
  * o por hora (tiempo) y se guarda dividido por el peso, para que siga siendo
  * válido si cambia el peso del usuario.
+ * Mixta: kcal por hora parado + kcal por km en movimiento.
  */
 @Composable
 private fun ActivityDialog(
@@ -445,9 +622,10 @@ private fun ActivityDialog(
 ) {
     var name by remember { mutableStateOf(initial?.name ?: "") }
     var emoji by remember { mutableStateOf(initial?.emoji ?: "🏃") }
-    var byDistance by remember { mutableStateOf(initial?.mode != Mode.TIME) }
-    var value by remember {
-        mutableStateOf(initial?.let { String.format(java.util.Locale.US, "%.2f", it.factor * weightKg) } ?: "")
+    var mode by remember { mutableStateOf(initial?.mode ?: Mode.DISTANCE) }
+    var value by remember { mutableStateOf(initial?.let { fmt(it.factor * weightKg) } ?: "") }
+    var valueDist by remember {
+        mutableStateOf(initial?.factorDistance?.let { fmt(it * weightKg) } ?: "")
     }
     var bike by remember { mutableStateOf(initial?.isBike ?: false) }
     var makeDefault by remember { mutableStateOf(initial?.isDefault ?: false) }
@@ -456,33 +634,55 @@ private fun ActivityDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initial == null) "Nueva actividad" else "Editar actividad") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 OutlinedTextField(name, { name = it }, label = { Text("Nombre") }, singleLine = true)
-                OutlinedTextField(emoji, { emoji = it }, label = { Text("Icono (emoji)") }, singleLine = true)
+                Text("Icono: $emoji")
+                EmojiGrid(selected = emoji) { emoji = it }
+
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
-                        selected = byDistance, onClick = { byDistance = true },
+                        selected = mode == Mode.DISTANCE, onClick = { mode = Mode.DISTANCE },
                         label = { Text("Por km") }
                     )
                     FilterChip(
-                        selected = !byDistance, onClick = { byDistance = false },
+                        selected = mode == Mode.TIME, onClick = { mode = Mode.TIME },
                         label = { Text("Por tiempo") }
                     )
-                }
-                OutlinedTextField(
-                    value, { value = it },
-                    label = { Text(if (byDistance) "Kcal extra por km" else "Kcal extra por hora") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                )
-                val v = value.toDec()
-                if (v != null && weightKg > 0) {
-                    Text(
-                        "Se guarda como ${Calc.num(v / weightKg, 3)} kcal por kg " +
-                            (if (byDistance) "y km" else "y hora"),
-                        style = MaterialTheme.typography.bodySmall
+                    FilterChip(
+                        selected = mode == Mode.MIXED, onClick = { mode = Mode.MIXED },
+                        label = { Text("Mixta") }
                     )
                 }
+
+                if (mode == Mode.MIXED) {
+                    Text(
+                        "Mixta: si no te mueves cuenta por tiempo; si te mueves, por distancia.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedTextField(
+                        value, { value = it },
+                        label = { Text("Kcal extra por hora (parado)") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                    )
+                    OutlinedTextField(
+                        valueDist, { valueDist = it },
+                        label = { Text("Kcal extra por km (en movimiento)") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                    )
+                } else {
+                    OutlinedTextField(
+                        value, { value = it },
+                        label = { Text(if (mode == Mode.DISTANCE) "Kcal extra por km" else "Kcal extra por hora") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                    )
+                }
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = bike, onCheckedChange = { bike = it })
                     Text("Es bicicleta (permitida > velocidad de bici)")
@@ -495,15 +695,17 @@ private fun ActivityDialog(
         },
         confirmButton = {
             TextButton(onClick = {
-                val v2 = value.toDec() ?: return@TextButton
+                val v = value.toDec() ?: return@TextButton
                 if (name.isBlank()) return@TextButton
+                val vd = if (mode == Mode.MIXED) (valueDist.toDec() ?: return@TextButton) else null
                 onSave(
                     ActivityType(
                         id = initial?.id ?: 0L,
                         name = name.trim(),
                         emoji = emoji.ifBlank { "🏃" },
-                        mode = if (byDistance) Mode.DISTANCE else Mode.TIME,
-                        factor = if (weightKg > 0) v2 / weightKg else 0.0,
+                        mode = mode,
+                        factor = if (weightKg > 0) v / weightKg else 0.0,
+                        factorDistance = if (vd != null && weightKg > 0) vd / weightKg else null,
                         isBike = bike,
                         isRest = initial?.isRest ?: false,
                         isDefault = makeDefault
