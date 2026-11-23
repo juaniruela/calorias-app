@@ -13,6 +13,7 @@ import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
+import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
@@ -69,16 +70,6 @@ class CaloriasWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = CaloriasWidget()
 }
 
-class ToggleDayAction : ActionCallback {
-    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        if (AppDb.get(context).dao().openDay() != null) {
-            DayController.endDay(context)
-        } else {
-            DayController.startDay(context)
-        }
-    }
-}
-
 class CycleActivityAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         DayController.cycleActivity(context)
@@ -98,10 +89,11 @@ private fun WidgetBody(d: WidgetData) {
                 if (d.running) "Hoy" else "Día sin iniciar",
                 style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 16.sp, color = TXT)
             )
+            // Abre una pantalla de confirmación en la app antes de iniciar o finalizar el día.
             Text(
                 if (d.running) "■ Finalizar" else "▶ Iniciar",
                 modifier = GlanceModifier
-                    .clickable(actionRunCallback<ToggleDayAction>())
+                    .clickable(actionStartActivity<ConfirmDayActivity>())
                     .padding(start = 12.dp, top = 6.dp, end = 6.dp, bottom = 6.dp),
                 style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = ACCENT)
             )
@@ -126,14 +118,18 @@ private fun WidgetBody(d: WidgetData) {
             )
         }
 
-        Row(modifier = GlanceModifier.padding(top = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = GlanceModifier.padding(top = 6.dp)) {
             Text(
                 d.activityLabel,
+                style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TXT)
+            )
+            Text(
+                "  ⟳ Cambiar",
                 modifier = GlanceModifier
                     .clickable(actionRunCallback<CycleActivityAction>())
                     .background(CHIP)
                     .padding(8.dp),
-                style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TXT)
+                style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 13.sp, color = ACCENT)
             )
         }
 

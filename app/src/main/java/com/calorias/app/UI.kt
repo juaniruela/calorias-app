@@ -301,6 +301,7 @@ fun SettingsScreen() {
     var sMin by remember { mutableStateOf(s0.summaryMinute.toString()) }
     var tips by remember { mutableStateOf(s0.tips) }
     var showNew by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<ActivityType?>(null) }
     var saved by remember { mutableStateOf(false) }
 
     val weightNow = weight.toDec() ?: s0.weightKg
@@ -381,9 +382,11 @@ fun SettingsScreen() {
                 Text(
                     "${t.emoji} ${t.name} · ${Calc.num(shown, 2)} $perUnit" +
                         (if (t.isBike) " · bici" else "") +
-                        (if (t.isRest) " · descanso" else ""),
+                        (if (t.isRest) " · descanso" else "") +
+                        (if (t.isDefault) " · por defecto" else ""),
                     Modifier.weight(1f)
                 )
+                TextButton(onClick = { editing = t }) { Text("Editar") }
                 IconButton(onClick = { scope.launch { dao.deleteType(t) } }) {
                     Icon(Icons.Default.Delete, contentDescription = "Borrar")
                 }
@@ -394,16 +397,18 @@ fun SettingsScreen() {
         }
     }
 
-    if (showNew) {
-        NewActivityDialog(
+    if (showNew || editing != null) {
+        ActivityDialog(
             weightKg = weightNow,
-            onDismiss = { showNew = false },
-            onCreate = { type ->
+            initial = editing,
+            onDismiss = { showNew = false; editing = null },
+            onSave = { type ->
                 scope.launch {
                     if (type.isDefault) dao.clearDefault()
-                    dao.insertType(type)
+                    if (type.id == 0L) dao.insertType(type) else dao.updateType(type)
                 }
                 showNew = false
+                editing = null
             }
         )
     }
@@ -427,26 +432,29 @@ private fun Field(
 }
 
 /**
- * Crea una actividad. Transformación: se introduce kcal extra por km (distancia)
+ * Crea o edita una actividad. Transformación: se introduce kcal extra por km (distancia)
  * o por hora (tiempo) y se guarda dividido por el peso, para que siga siendo
  * válido si cambia el peso del usuario.
  */
 @Composable
-private fun NewActivityDialog(
+private fun ActivityDialog(
     weightKg: Double,
+    initial: ActivityType?,
     onDismiss: () -> Unit,
-    onCreate: (ActivityType) -> Unit
+    onSave: (ActivityType) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var emoji by remember { mutableStateOf("🏃") }
-    var byDistance by remember { mutableStateOf(true) }
-    var value by remember { mutableStateOf("") }
-    var bike by remember { mutableStateOf(false) }
-    var makeDefault by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf(initial?.name ?: "") }
+    var emoji by remember { mutableStateOf(initial?.emoji ?: "🏃") }
+    var byDistance by remember { mutableStateOf(initial?.mode != Mode.TIME) }
+    var value by remember {
+        mutableStateOf(initial?.let { String.format(java.util.Locale.US, "%.2f", it.factor * weightKg) } ?: "")
+    }
+    var bike by remember { mutableStateOf(initial?.isBike ?: false) }
+    var makeDefault by remember { mutableStateOf(initial?.isDefault ?: false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Nueva actividad") },
+        title = { Text(if (initial == null) "Nueva actividad" else "Editar actividad") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(name, { name = it }, label = { Text("Nombre") }, singleLine = true)
@@ -489,13 +497,15 @@ private fun NewActivityDialog(
             TextButton(onClick = {
                 val v2 = value.toDec() ?: return@TextButton
                 if (name.isBlank()) return@TextButton
-                onCreate(
+                onSave(
                     ActivityType(
+                        id = initial?.id ?: 0L,
                         name = name.trim(),
                         emoji = emoji.ifBlank { "🏃" },
                         mode = if (byDistance) Mode.DISTANCE else Mode.TIME,
                         factor = if (weightKg > 0) v2 / weightKg else 0.0,
                         isBike = bike,
+                        isRest = initial?.isRest ?: false,
                         isDefault = makeDefault
                     )
                 )

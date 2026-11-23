@@ -74,6 +74,9 @@ interface AppDao {
     @Delete
     suspend fun deleteType(t: ActivityType)
 
+    @Update
+    suspend fun updateType(t: ActivityType)
+
     @Query("UPDATE activity_types SET isDefault = 0")
     suspend fun clearDefault()
 
