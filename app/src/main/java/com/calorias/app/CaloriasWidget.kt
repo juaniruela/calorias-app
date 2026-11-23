@@ -5,7 +5,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Intent
 import androidx.glance.GlanceId
+import androidx.glance.LocalContext
 import androidx.glance.GlanceModifier
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.clickable
@@ -78,6 +80,7 @@ class CycleActivityAction : ActionCallback {
 
 @Composable
 private fun WidgetBody(d: WidgetData) {
+    val ctx = LocalContext.current
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
@@ -93,7 +96,7 @@ private fun WidgetBody(d: WidgetData) {
             Text(
                 if (d.running) "■ Finalizar" else "▶ Iniciar",
                 modifier = GlanceModifier
-                    .clickable(actionStartActivity<ConfirmDayActivity>())
+                    .clickable(actionStartActivity(Intent(ctx, ConfirmDayActivity::class.java)))
                     .padding(start = 12.dp, top = 6.dp, end = 6.dp, bottom = 6.dp),
                 style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = ACCENT)
             )
