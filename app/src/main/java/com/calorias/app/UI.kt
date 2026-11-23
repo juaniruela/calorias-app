@@ -65,6 +65,7 @@ private fun describe(t: ActivityType, w: Double): String = when (t.mode) {
 
 // ---------------------------------------------------------------- HOY
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HomeScreen() {
     val ctx = LocalContext.current
