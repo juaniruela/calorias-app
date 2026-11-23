@@ -14,6 +14,8 @@ android {
         targetSdk = 34
         versionCode = 2
         versionName = "1.1"
+        // Identificador de la compilación (número de ejecución de GitHub Actions) para saber si hay una versión nueva.
+        buildConfigField("String", "BUILD_ID", "\"${System.getenv("GITHUB_RUN_ID") ?: "local"}\"")
     }
 
     // Clave de depuración fija (en el repo) para que todas las compilaciones se firmen igual
@@ -44,6 +46,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     composeOptions {

@@ -44,3 +44,5 @@ jobs:
             gh release create apk-latest --title "Calorías - última versión" \
               --notes "APK de depuración generado automáticamente por GitHub Actions." --latest=false
           gh release upload apk-latest calorias.apk --clobber
+          # La app compara este identificador con el de su propia compilación para saber si hay una versión nueva.
+          gh release edit apk-latest --notes "BUILD_ID=${GITHUB_RUN_ID}"

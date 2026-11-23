@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -67,6 +68,11 @@ fun AppRoot() {
                     icon = { Icon(Icons.Default.Settings, contentDescription = null) },
                     label = { Text("Ajustes") }
                 )
+                NavigationBarItem(
+                    selected = tab == 3, onClick = { tab = 3 },
+                    icon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                    label = { Text("Actualizar") }
+                )
             }
         }
     ) { inner ->
@@ -74,7 +80,8 @@ fun AppRoot() {
             when (tab) {
                 0 -> HomeScreen()
                 1 -> HistoryScreen()
-                else -> SettingsScreen()
+                2 -> SettingsScreen()
+                else -> UpdateScreen()
             }
         }
     }
