@@ -18,15 +18,13 @@ import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
-import androidx.glance.layout.Spacer
-import androidx.glance.layout.defaultWeight
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.padding
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import androidx.glance.unit.ColorProvider
+import androidx.glance.color.ColorProvider
 
 private val TXT = ColorProvider(day = Color(0xFF1B1B1B), night = Color(0xFFF2F2F2))
 private val MUTED = ColorProvider(day = Color(0xFF5F6368), night = Color(0xFFBDBDBD))
@@ -100,12 +98,11 @@ private fun WidgetBody(d: WidgetData) {
                 if (d.running) "Hoy" else "Día sin iniciar",
                 style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 16.sp, color = TXT)
             )
-            Spacer(GlanceModifier.defaultWeight())
             Text(
                 if (d.running) "■ Finalizar" else "▶ Iniciar",
                 modifier = GlanceModifier
                     .clickable(actionRunCallback<ToggleDayAction>())
-                    .padding(6.dp),
+                    .padding(start = 12.dp, top = 6.dp, end = 6.dp, bottom = 6.dp),
                 style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 14.sp, color = ACCENT)
             )
         }

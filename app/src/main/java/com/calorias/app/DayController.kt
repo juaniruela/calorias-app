@@ -1,6 +1,7 @@
 package com.calorias.app
 
 import android.content.Context
+import androidx.glance.appwidget.updateAll
 import java.time.LocalDate
 
 /** Lógica de inicio/fin de jornada, cambio de actividad y resúmenes. Usada por la app, el widget y el worker. */
