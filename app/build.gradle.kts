@@ -12,8 +12,19 @@ android {
         applicationId = "com.calorias.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
+    }
+
+    // Clave de depuración fija (en el repo) para que todas las compilaciones se firmen igual
+    // y Android permita instalar cada versión encima de la anterior.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug-shared.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
