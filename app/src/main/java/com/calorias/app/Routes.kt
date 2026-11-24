@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -48,7 +47,8 @@ private fun resumenRuta(r: RouteRecord): String =
 /** Lista de rutas guardadas, de la más reciente a la más antigua. */
 @Composable
 fun RoutesList(onOpen: (Long) -> Unit) {
-    val dao = remember { AppDb.get(LocalContext.current).dao() }
+    val ctx = LocalContext.current
+    val dao = remember { AppDb.get(ctx).dao() }
     val routes by dao.observeRoutes().collectAsState(initial = emptyList())
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -71,7 +71,8 @@ fun RoutesList(onOpen: (Long) -> Unit) {
 /** Mapa de Google con el recorrido de una ruta. La clave de la API va en el manifiesto (MAPS_API_KEY). */
 @Composable
 fun RouteMapScreen(routeId: Long, onBack: () -> Unit) {
-    val dao = remember { AppDb.get(LocalContext.current).dao() }
+    val ctx = LocalContext.current
+    val dao = remember { AppDb.get(ctx).dao() }
     val route by remember(routeId) { dao.observeRoute(routeId) }.collectAsState(initial = null)
     val points by remember(routeId) { dao.observePoints(routeId) }.collectAsState(initial = emptyList())
     val latLngs = remember(points) { points.map { LatLng(it.lat, it.lng) } }
