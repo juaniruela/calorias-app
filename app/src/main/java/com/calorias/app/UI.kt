@@ -139,6 +139,8 @@ fun HomeScreen() {
                         onClick = {
                             activeId = t.id
                             store.activeTypeId = t.id
+                            // Reaplica el GPS: se apaga en actividades por tiempo y se enciende en las demás.
+                            if (open != null) TrackingService.start(ctx)
                             scope.launch { DayController.refreshWidget(ctx) }
                         },
                         label = { Text("${t.emoji} ${t.name}") }

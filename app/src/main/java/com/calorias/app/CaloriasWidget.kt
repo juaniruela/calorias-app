@@ -101,6 +101,14 @@ private fun WidgetBody(d: WidgetData) {
                     .padding(start = 12.dp, top = 4.dp, end = 4.dp, bottom = 4.dp),
                 style = TextStyle(fontWeight = FontWeight.Bold, fontSize = 13.sp, color = ACCENT)
             )
+            // Enlace pequeño que abre la app principal.
+            Text(
+                "↗ App",
+                modifier = GlanceModifier
+                    .clickable(actionStartActivity(Intent(ctx, MainActivity::class.java)))
+                    .padding(start = 8.dp, top = 4.dp, end = 4.dp, bottom = 4.dp),
+                style = TextStyle(fontSize = 11.sp, color = MUTED)
+            )
         }
 
         d.summary?.let { s ->

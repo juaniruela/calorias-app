@@ -20,20 +20,30 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Servicio en primer plano que lee el GPS cada [Settings.gpsIntervalSec] segundos,
- * acumula tiempo y distancia en la actividad activa y aplica las reglas de velocidad.
+ * Servicio en primer plano.
+ * - Actividades por distancia o mixtas: GPS activo cada [Settings.gpsIntervalSec] s.
+ * - Actividades por tiempo: GPS y actualizaciones de ubicación desactivados para ahorrar batería;
+ *   el tiempo se cuenta con un temporizador.
  */
 class TrackingService : Service() {
     private lateinit var fused: FusedLocationProviderClient
     private lateinit var store: SettingsStore
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /** Serializa las lecturas del GPS, el temporizador y los cambios de modo. */
+    private val lock = Mutex()
+    private var timerJob: Job? = null
+    private var gpsOn = false
 
     private var lastLoc: Location? = null
     private var lastTs = 0L
@@ -43,7 +53,7 @@ class TrackingService : Service() {
     private val callback = object : LocationCallback() {
         override fun onLocationResult(r: LocationResult) {
             val loc = r.lastLocation ?: return
-            scope.launch { handleFix(loc) }
+            scope.launch { lock.withLock { handleFix(loc) } }
         }
     }
 
@@ -54,28 +64,91 @@ class TrackingService : Service() {
         Notif.channels(this)
     }
 
-    @SuppressLint("MissingPermission")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         ServiceCompat.startForeground(
             this, Notif.ID_TRACK, Notif.tracking(this), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
         )
+        if (!hasLocationPermission()) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        scope.launch {
+            lock.withLock {
+                val dao = AppDb.get(this@TrackingService).dao()
+                if (dao.openDay() == null) {
+                    stopSelf()
+                    return@withLock
+                }
+                applyActive()
+            }
+        }
+        if (timerJob == null) startTimer()
+        return START_NOT_STICKY
+    }
+
+    private fun hasLocationPermission(): Boolean {
         val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
         val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
-        if (!fine && !coarse) {
-            stopSelf()
-            return START_NOT_STICKY
+        return fine || coarse
+    }
+
+    private suspend fun currentActive(): ActivityType? {
+        val types = AppDb.get(this).dao().types()
+        return types.firstOrNull { it.id == store.activeTypeId }
+            ?: types.firstOrNull { it.isRest }
+            ?: types.firstOrNull()
+    }
+
+    /** Enciende o apaga el GPS según la actividad activa. Las actividades por tiempo no usan GPS. */
+    private suspend fun applyActive() {
+        val active = currentActive()
+        val wantGps = active != null && active.mode != Mode.TIME
+        if (wantGps == gpsOn) return
+        if (wantGps) {
+            lastLoc = null
+            fastSince = 0L
+            verySince = 0L
+            requestUpdates()
+        } else {
+            fused.removeLocationUpdates(callback)
         }
+        gpsOn = wantGps
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun requestUpdates() {
         val intervalMs = store.load().gpsIntervalSec * 1000L
         val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, intervalMs)
             .setMinUpdateIntervalMillis(intervalMs)
             .build()
-        fused.removeLocationUpdates(callback)
         fused.requestLocationUpdates(req, callback, Looper.getMainLooper())
-        return START_NOT_STICKY
     }
 
+    /** Sin GPS: cuenta el tiempo de la actividad activa (por tiempo, o estática si es mixta). */
+    private fun startTimer() {
+        timerJob = scope.launch {
+            while (true) {
+                val interval = store.load().gpsIntervalSec
+                delay(interval * 1000L)
+                lock.withLock {
+                    if (gpsOn) return@withLock
+                    val dao = AppDb.get(this@TrackingService).dao()
+                    val day = dao.openDay() ?: return@withLock
+                    val active = currentActive() ?: return@withLock
+                    when (active.mode) {
+                        Mode.TIME -> dao.addActivity(day.id, active.id, interval.toLong(), 0.0, 0L)
+                        Mode.MIXED -> dao.addActivity(day.id, active.id, interval.toLong(), 0.0, interval.toLong())
+                        Mode.DISTANCE -> Unit
+                    }
+                    DayController.refreshWidget(this@TrackingService)
+                }
+            }
+        }
+    }
+
+    /** Lectura del GPS. Debe llamarse con [lock] cogido. */
     private suspend fun handleFix(loc: Location) {
         val dao = AppDb.get(this).dao()
         val day = dao.openDay()
@@ -125,6 +198,8 @@ class TrackingService : Service() {
         target?.let {
             active = it
             store.activeTypeId = it.id
+            // Si la regla cambia a una actividad por tiempo, el GPS se apaga.
+            applyActive()
         }
 
         // Mixta: sin movimiento el tiempo cuenta como estático; con movimiento cuenta la distancia.
@@ -148,6 +223,7 @@ class TrackingService : Service() {
     }
 
     companion object {
+        /** Arranca el servicio o, si ya está activo, reaplica la actividad activa (GPS sí/no). */
         fun start(ctx: Context) {
             ContextCompat.startForegroundService(ctx, Intent(ctx, TrackingService::class.java))
         }
