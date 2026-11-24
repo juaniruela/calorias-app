@@ -86,7 +86,9 @@ fun RouteMapScreen(routeId: Long, onBack: () -> Unit) {
     }
 
     LaunchedEffect(mapLoaded, latLngs) {
-        if (!mapLoaded || latLngs.isEmpty()) return@LaunchedEffect
+        if (latLngs.isEmpty()) return@LaunchedEffect
+        // Respaldo: si onMapLoaded no llegara, se encuadra igualmente tras un instante.
+        if (!mapLoaded) kotlinx.coroutines.delay(1500)
         runCatching {
             if (latLngs.size == 1) {
                 camera.move(CameraUpdateFactory.newLatLngZoom(latLngs[0], 16f))
@@ -95,6 +97,14 @@ fun RouteMapScreen(routeId: Long, onBack: () -> Unit) {
                 camera.move(CameraUpdateFactory.newLatLngBounds(bounds, 80))
             }
         }
+    }
+
+    // Diagnóstico: la clave se graba en el manifiesto al compilar. Si llega vacía, el mapa sale en blanco.
+    val mapsKey = remember {
+        runCatching {
+            ctx.packageManager.getApplicationInfo(ctx.packageName, android.content.pm.PackageManager.GET_META_DATA)
+                .metaData?.getString("com.google.android.geo.API_KEY").orEmpty()
+        }.getOrDefault("")
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -114,6 +124,14 @@ fun RouteMapScreen(routeId: Long, onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall
                 )
             }
+        }
+        if (mapsKey.isBlank()) {
+            Text(
+                "Falta la clave de Google Maps en esta versión de la app (secreto MAPS_API_KEY sin configurar). " +
+                    "Por eso el mapa no se ve.",
+                color = androidx.compose.ui.graphics.Color(0xFFC62828),
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
         }
         GoogleMap(
             modifier = Modifier.fillMaxWidth().weight(1f),
