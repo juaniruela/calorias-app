@@ -47,7 +47,8 @@ class TrackingService : Service() {
 
     private var lastLoc: Location? = null
     private var lastTs = 0L
-    private var lastRoutePointTs = 0L   // último punto guardado de la ruta (1 por minuto)
+    private var lastRoutePointTs = 0L   // último punto guardado de la ruta
+    private var gpsIntervalUsed = 0     // intervalo con el que se pidieron las lecturas GPS
     private var fastSince = 0L   // inicio de velocidad > fastKmh (0 = no)
     private var verySince = 0L   // inicio de velocidad > veryFastKmh (0 = no)
 
@@ -128,6 +129,11 @@ class TrackingService : Service() {
         val active = currentActive()
         updateRoute(dao, active)
         val wantGps = active != null && active.mode != Mode.TIME
+        // Si cambió el intervalo GPS en Ajustes, se vuelven a pedir las lecturas con el nuevo valor.
+        if (wantGps && gpsOn && store.load().gpsIntervalSec != gpsIntervalUsed) {
+            fused.removeLocationUpdates(callback)
+            gpsOn = false
+        }
         if (wantGps == gpsOn) return
         if (wantGps) {
             lastLoc = null
@@ -142,7 +148,9 @@ class TrackingService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun requestUpdates() {
-        val intervalMs = store.load().gpsIntervalSec * 1000L
+        val interval = store.load().gpsIntervalSec
+        gpsIntervalUsed = interval
+        val intervalMs = interval * 1000L
         val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, intervalMs)
             .setMinUpdateIntervalMillis(intervalMs)
             .build()
@@ -243,7 +251,7 @@ class TrackingService : Service() {
                 s.weightKg
             )
             dao.addRouteStats(route.id, dtSec, addMeters, kcal)
-            if (loc.accuracy <= 50f && now - lastRoutePointTs >= 60_000L) {
+            if (loc.accuracy <= 50f && now - lastRoutePointTs >= s.routePointSec * 1000L) {
                 dao.insertPoint(RoutePoint(routeId = route.id, lat = loc.latitude, lng = loc.longitude, time = now))
                 lastRoutePointTs = now
             }

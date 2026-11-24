@@ -219,6 +219,7 @@ private fun StatsCard(s: DaySummary) {
             StatRow("Pasos", Calc.num(s.steps.toDouble()))
             StatRow("Distancia", "${Calc.num(s.meters / 1000, 2)} km")
             StatRow("Tiempo activo", "${s.activeSeconds / 60} min")
+            StatRow("Velocidad media", "${Calc.num(s.avgKmh, 1)} km/h")
             StatRow("Comida ingerida", "${Calc.num(s.intakeKcal)} kcal (${s.meals} comidas)")
             StatRow("Gasto (basal + actividad)", "${Calc.num(s.bmrKcal + s.activityKcal)} kcal")
             StatRow(
@@ -382,7 +383,10 @@ private fun DayHistoryCard(day: DayRecord) {
                 style = MaterialTheme.typography.titleSmall
             )
             sum?.let { s ->
-                Text("Pasos ${Calc.num(s.steps.toDouble())} · ${Calc.num(s.meters / 1000, 2)} km · ${s.activeSeconds / 60} min")
+                Text(
+                    "Pasos ${Calc.num(s.steps.toDouble())} · ${Calc.num(s.meters / 1000, 2)} km · " +
+                        "${s.activeSeconds / 60} min · ${Calc.num(s.avgKmh, 1)} km/h media"
+                )
                 Text("Ingeridas ${Calc.num(s.intakeKcal)} kcal · Gastadas ${Calc.num(s.bmrKcal + s.activityKcal)} kcal")
                 Text(
                     "Saldo ${Calc.num(s.balanceKcal)} kcal · ${Calc.gramsText(s.gramsChange)}",
@@ -412,6 +416,7 @@ fun SettingsScreen() {
     var stride by remember { mutableStateOf(s0.strideM.toString()) }
     var kcalFat by remember { mutableStateOf(s0.kcalPerKgFat.toString()) }
     var gps by remember { mutableStateOf(s0.gpsIntervalSec.toString()) }
+    var routePoint by remember { mutableStateOf(s0.routePointSec.toString()) }
     var fast by remember { mutableStateOf(s0.fastKmh.toString()) }
     var veryFast by remember { mutableStateOf(s0.veryFastKmh.toString()) }
     var window by remember { mutableStateOf(s0.speedWindowMin.toString()) }
@@ -436,6 +441,7 @@ fun SettingsScreen() {
             strideM = stride.toDec() ?: s0.strideM,
             kcalPerKgFat = kcalFat.toDec() ?: s0.kcalPerKgFat,
             gpsIntervalSec = gps.toIntOrNull()?.coerceAtLeast(5) ?: s0.gpsIntervalSec,
+            routePointSec = routePoint.toIntOrNull()?.coerceAtLeast(5) ?: s0.routePointSec,
             fastKmh = fast.toDec() ?: s0.fastKmh,
             veryFastKmh = veryFast.toDec() ?: s0.veryFastKmh,
             speedWindowMin = window.toIntOrNull()?.coerceAtLeast(1) ?: s0.speedWindowMin,
@@ -446,7 +452,11 @@ fun SettingsScreen() {
         )
         store.save(s)
         SummaryWorker.schedule(ctx, s.summaryHour, s.summaryMinute)
-        scope.launch { DayController.refreshWidget(ctx) }
+        scope.launch {
+            DayController.refreshWidget(ctx)
+            // Si hay un día abierto, el servicio aplica ya el nuevo intervalo GPS.
+            if (dao.openDay() != null) TrackingService.start(ctx)
+        }
         saved = true
     }
 
@@ -470,7 +480,8 @@ fun SettingsScreen() {
 
         Text("Pasos y GPS", style = MaterialTheme.typography.titleMedium)
         Field("Longitud de paso (m)", stride) { stride = it; saved = false }
-        Field("Intervalo GPS (s, aplica al iniciar el día)", gps) { gps = it; saved = false }
+        Field("Intervalo de lectura GPS (s)", gps) { gps = it; saved = false }
+        Field("Intervalo de puntos de la ruta (s)", routePoint) { routePoint = it; saved = false }
         Field("Movimiento mínimo por lectura (m, actividad mixta)", moveThr) { moveThr = it; saved = false }
 
         Text("Reglas de velocidad", style = MaterialTheme.typography.titleMedium)

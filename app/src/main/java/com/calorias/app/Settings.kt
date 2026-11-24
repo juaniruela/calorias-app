@@ -20,6 +20,8 @@ data class Settings(
     val strideM: Double = 0.75,
     val kcalPerKgFat: Double = 7700.0,
     val gpsIntervalSec: Int = 30,
+    /** Cada cuántos segundos se guarda un punto en la ruta (si la actividad guarda rutas). */
+    val routePointSec: Int = 60,
     val fastKmh: Double = 20.0,
     val veryFastKmh: Double = 50.0,
     val speedWindowMin: Int = 5,
@@ -49,6 +51,7 @@ class SettingsStore(ctx: Context) {
             strideM = sp.getFloat("strideM", d.strideM.toFloat()).toDouble(),
             kcalPerKgFat = sp.getFloat("kcalPerKgFat", d.kcalPerKgFat.toFloat()).toDouble(),
             gpsIntervalSec = sp.getInt("gpsIntervalSec", d.gpsIntervalSec),
+            routePointSec = sp.getInt("routePointSec", d.routePointSec),
             fastKmh = sp.getFloat("fastKmh", d.fastKmh.toFloat()).toDouble(),
             veryFastKmh = sp.getFloat("veryFastKmh", d.veryFastKmh.toFloat()).toDouble(),
             speedWindowMin = sp.getInt("speedWindowMin", d.speedWindowMin),
@@ -68,6 +71,7 @@ class SettingsStore(ctx: Context) {
             .putFloat("strideM", s.strideM.toFloat())
             .putFloat("kcalPerKgFat", s.kcalPerKgFat.toFloat())
             .putInt("gpsIntervalSec", s.gpsIntervalSec)
+            .putInt("routePointSec", s.routePointSec)
             .putFloat("fastKmh", s.fastKmh.toFloat())
             .putFloat("veryFastKmh", s.veryFastKmh.toFloat())
             .putInt("speedWindowMin", s.speedWindowMin)

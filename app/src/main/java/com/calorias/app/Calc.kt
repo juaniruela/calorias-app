@@ -24,7 +24,9 @@ data class DaySummary(
     /** Estimación de cambio de peso en gramos. Positivo = sube, negativo = baja. */
     val gramsChange: Double,
     val byType: List<TypeLine>,
-    val meals: Int
+    val meals: Int,
+    /** Velocidad media (km/h) de las actividades con distancia: km / horas de esas actividades. */
+    val avgKmh: Double = 0.0
 )
 
 object Calc {
@@ -61,6 +63,7 @@ object Calc {
         val intake = food.sumOf { it.kcal }
         val balance = intake - (bmr + activity)
         val meters = lines.filter { it.type.mode != Mode.TIME }.sumOf { it.meters }
+        val distSeconds = lines.filter { it.type.mode != Mode.TIME }.sumOf { it.seconds }
         return DaySummary(
             bmrKcal = bmr,
             activityKcal = activity,
@@ -71,7 +74,8 @@ object Calc {
             balanceKcal = balance,
             gramsChange = balance / max(1.0, s.kcalPerKgFat) * 1000.0,
             byType = lines,
-            meals = food.size
+            meals = food.size,
+            avgKmh = avgKmh(meters, distSeconds)
         )
     }
 
@@ -82,6 +86,9 @@ object Calc {
     }
 
     fun num(x: Double, decimals: Int = 0): String = String.format(LOCALE_ES, "%,.${decimals}f", x)
+
+    /** Velocidad media en km/h a partir de metros y segundos. */
+    fun avgKmh(meters: Double, seconds: Long): Double = if (seconds > 0) meters / seconds * 3.6 else 0.0
 
     fun gramsText(g: Double): String =
         if (g > 0) "subido ~${num(g)} g" else "bajado ~${num(-g)} g"
