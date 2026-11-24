@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -123,17 +124,35 @@ internal fun staticMapUrl(points: List<RoutePoint>, key: String, width: Int, hei
     return sb.toString()
 }
 
-/** Descarga la imagen. Devuelve la imagen o, si falla, el mensaje de error de Google. */
+/**
+ * Descarga la imagen. Devuelve la imagen o, si falla, un mensaje explicando el motivo.
+ * La clave nunca se incluye en los mensajes.
+ */
 private suspend fun fetchStaticMap(url: String): Pair<Bitmap?, String?> = withContext(Dispatchers.IO) {
     try {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 10_000
         conn.readTimeout = 15_000
-        if (conn.responseCode == 200) {
-            BitmapFactory.decodeStream(conn.inputStream) to null
+        val code = conn.responseCode
+        if (code == 200) {
+            val bmp = conn.inputStream.use { BitmapFactory.decodeStream(it) }
+            if (bmp != null) bmp to null
+            else null to "Google devolvió una respuesta que no es una imagen."
         } else {
-            val body = conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            null to "Google no devolvió el mapa (código ${conn.responseCode}). ${body.take(300)}"
+            val type = conn.contentType.orEmpty()
+            // Solo se muestra el texto si es legible; las imágenes de error no sirven de nada en pantalla.
+            val detail = if (type.startsWith("text/") || type.contains("json")) {
+                conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty().take(200)
+            } else ""
+            val motivo = when (code) {
+                400 -> "Petición no válida."
+                403 -> "Google rechaza la clave. Comprueba que Maps Static API esté activada, que la facturación " +
+                    "del proyecto esté activa y que la clave no esté restringida a apps Android (esa restricción " +
+                    "no sirve para la Maps Static API)."
+                429 -> "Se ha superado el límite de uso de la clave."
+                else -> "Error de Google Maps."
+            }
+            null to "$motivo (código $code). ${detail}".trim()
         }
     } catch (e: Exception) {
         null to "No se pudo descargar el mapa: ${e.message ?: "error de red"}"
@@ -153,7 +172,9 @@ fun RouteMapScreen(routeId: Long, onBack: () -> Unit) {
         if (key.isBlank() || points.isEmpty()) null else staticMapUrl(points, key, 640, 640)
     }
     var result by remember { mutableStateOf<Pair<Bitmap?, String?>?>(null) }
-    LaunchedEffect(url) {
+    var attempt by remember { mutableStateOf(0) }
+    LaunchedEffect(url, attempt) {
+        result = null
         result = url?.let { fetchStaticMap(it) }
     }
 
@@ -191,7 +212,10 @@ fun RouteMapScreen(routeId: Long, onBack: () -> Unit) {
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxWidth().aspectRatio(1f).padding(8.dp)
             )
-            error != null -> Text(error, color = Color(0xFFC62828), modifier = Modifier.padding(16.dp))
+            error != null -> Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(error, color = Color(0xFFC62828))
+                Button(onClick = { attempt++ }) { Text("Reintentar") }
+            }
             else -> Text("Cargando mapa…", modifier = Modifier.padding(16.dp))
         }
     }
