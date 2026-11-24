@@ -1,5 +1,6 @@
 package com.calorias.app
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -345,17 +346,25 @@ fun HistoryScreen() {
     val ctx = LocalContext.current
     val dao = remember { AppDb.get(ctx).dao() }
     val days by dao.observeDays().collectAsState(initial = emptyList())
+    var openRouteId by remember { mutableStateOf<Long?>(null) }
 
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text("Historial", style = MaterialTheme.typography.headlineMedium)
-        if (days.isEmpty()) Text("Aún no hay días registrados.")
-        days.forEach { day -> DayHistoryCard(day) }
+    val routeId = openRouteId
+    if (routeId != null) {
+        BackHandler { openRouteId = null }
+        RouteMapScreen(routeId = routeId) { openRouteId = null }
+    } else {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("Historial", style = MaterialTheme.typography.headlineMedium)
+            if (days.isEmpty()) Text("Aún no hay días registrados.")
+            days.forEach { day -> DayHistoryCard(day) }
+            RoutesList { openRouteId = it }
+        }
     }
 }
 
@@ -632,6 +641,7 @@ private fun ActivityDialog(
     }
     var bike by remember { mutableStateOf(initial?.isBike ?: false) }
     var makeDefault by remember { mutableStateOf(initial?.isDefault ?: false) }
+    var saveRoute by remember { mutableStateOf(initial?.saveRoute ?: false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -686,6 +696,12 @@ private fun ActivityDialog(
                     )
                 }
 
+                if (mode != Mode.TIME) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = saveRoute, onCheckedChange = { saveRoute = it })
+                        Text("Guardar rutas (GPS cada minuto, se cierra al cambiar de actividad)")
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = bike, onCheckedChange = { bike = it })
                     Text("Es bicicleta (permitida > velocidad de bici)")
@@ -711,7 +727,8 @@ private fun ActivityDialog(
                         factorDistance = if (vd != null && weightKg > 0) vd / weightKg else null,
                         isBike = bike,
                         isRest = initial?.isRest ?: false,
-                        isDefault = makeDefault
+                        isDefault = makeDefault,
+                        saveRoute = mode != Mode.TIME && saveRoute
                     )
                 )
             }) { Text("Guardar") }

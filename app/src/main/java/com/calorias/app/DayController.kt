@@ -24,6 +24,7 @@ object DayController {
         val open = dao.openDay() ?: return
         val closed = open.copy(endedAt = now())
         dao.updateDay(closed)
+        dao.closeOpenRoutes(closed.endedAt ?: now())
         TrackingService.stop(ctx)
         Notif.summary(ctx, summaryOf(ctx, closed))
         refreshWidget(ctx)

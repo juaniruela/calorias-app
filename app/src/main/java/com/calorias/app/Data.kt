@@ -31,6 +31,8 @@ data class ActivityType(
     val mode: Mode,
     val factor: Double,
     val factorDistance: Double? = null,
+    /** Guardar la ruta GPS (un punto por minuto) mientras esta actividad está activa. Solo DISTANCE y MIXED. */
+    val saveRoute: Boolean? = null,
     val isBike: Boolean = false,
     val isRest: Boolean = false,
     val isDefault: Boolean = false
@@ -65,6 +67,30 @@ data class FoodEntry(
     val kcal: Double,
     val time: Long,
     val emoji: String? = null
+)
+
+/** Ruta de una actividad con km. Se abre al empezar la actividad y se cierra al cambiar de actividad. */
+@Entity(tableName = "routes")
+data class RouteRecord(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val dayId: Long,
+    val typeId: Long,
+    val typeName: String,
+    val startedAt: Long,
+    val endedAt: Long? = null,
+    val seconds: Long = 0,
+    val meters: Double = 0.0,
+    val kcal: Double = 0.0
+)
+
+/** Punto GPS de una ruta, uno por minuto. */
+@Entity(tableName = "route_points")
+data class RoutePoint(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val routeId: Long,
+    val lat: Double,
+    val lng: Double,
+    val time: Long
 )
 
 /** Catálogo de alimentos reutilizables. */
@@ -152,6 +178,30 @@ interface AppDao {
 
     @Delete
     suspend fun deleteCatalog(f: FoodItem)
+
+    @Insert
+    suspend fun insertRoute(r: RouteRecord): Long
+
+    @Query("SELECT * FROM routes WHERE endedAt IS NULL ORDER BY id DESC LIMIT 1")
+    suspend fun openRoute(): RouteRecord?
+
+    @Query("UPDATE routes SET endedAt = :now WHERE endedAt IS NULL")
+    suspend fun closeOpenRoutes(now: Long)
+
+    @Query("UPDATE routes SET seconds = seconds + :seconds, meters = meters + :meters, kcal = kcal + :kcal WHERE id = :routeId")
+    suspend fun addRouteStats(routeId: Long, seconds: Long, meters: Double, kcal: Double)
+
+    @Query("SELECT * FROM routes ORDER BY id DESC")
+    fun observeRoutes(): Flow<List<RouteRecord>>
+
+    @Query("SELECT * FROM routes WHERE id = :id")
+    fun observeRoute(id: Long): Flow<RouteRecord?>
+
+    @Insert
+    suspend fun insertPoint(p: RoutePoint)
+
+    @Query("SELECT * FROM route_points WHERE routeId = :routeId ORDER BY time")
+    fun observePoints(routeId: Long): Flow<List<RoutePoint>>
 }
 
 /** v1 -> v2: actividad mixta, icono en comidas y catálogo de alimentos. Conserva los datos. */
@@ -167,9 +217,29 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+/** v2 -> v3: opción de guardar rutas y tablas de rutas y puntos GPS. */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE activity_types ADD COLUMN saveRoute INTEGER")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `routes` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`dayId` INTEGER NOT NULL, `typeId` INTEGER NOT NULL, `typeName` TEXT NOT NULL, " +
+                "`startedAt` INTEGER NOT NULL, `endedAt` INTEGER, `seconds` INTEGER NOT NULL, " +
+                "`meters` REAL NOT NULL, `kcal` REAL NOT NULL)"
+        )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `route_points` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`routeId` INTEGER NOT NULL, `lat` REAL NOT NULL, `lng` REAL NOT NULL, `time` INTEGER NOT NULL)"
+        )
+    }
+}
+
 @Database(
-    entities = [ActivityType::class, DayRecord::class, DayActivity::class, FoodEntry::class, FoodItem::class],
-    version = 2,
+    entities = [
+        ActivityType::class, DayRecord::class, DayActivity::class, FoodEntry::class,
+        FoodItem::class, RouteRecord::class, RoutePoint::class
+    ],
+    version = 3,
     exportSchema = false
 )
 abstract class AppDb : RoomDatabase() {
@@ -181,7 +251,7 @@ abstract class AppDb : RoomDatabase() {
 
         fun get(ctx: Context): AppDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(ctx.applicationContext, AppDb::class.java, "calorias.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         // Actividades por defecto. Los usuarios pueden añadir más desde Ajustes.

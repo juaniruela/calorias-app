@@ -47,6 +47,7 @@ class TrackingService : Service() {
 
     private var lastLoc: Location? = null
     private var lastTs = 0L
+    private var lastRoutePointTs = 0L   // último punto guardado de la ruta (1 por minuto)
     private var fastSince = 0L   // inicio de velocidad > fastKmh (0 = no)
     private var verySince = 0L   // inicio de velocidad > veryFastKmh (0 = no)
 
@@ -101,9 +102,31 @@ class TrackingService : Service() {
             ?: types.firstOrNull()
     }
 
+    /**
+     * Abre la ruta de la actividad activa si tiene guardado de rutas activado.
+     * La ruta se cierra al cambiar de actividad (o si deja de guardarse).
+     */
+    private suspend fun updateRoute(dao: AppDao, active: ActivityType?) {
+        val now = System.currentTimeMillis()
+        val open = dao.openRoute()
+        val wantRoute = active != null && active.saveRoute == true && active.mode != Mode.TIME
+        val keep = open != null && wantRoute && open.typeId == active?.id
+        if (keep) return
+        if (open != null) dao.closeOpenRoutes(now)
+        if (active != null && wantRoute) {
+            val day = dao.openDay() ?: return
+            dao.insertRoute(
+                RouteRecord(dayId = day.id, typeId = active.id, typeName = active.name, startedAt = now)
+            )
+            lastRoutePointTs = 0L
+        }
+    }
+
     /** Enciende o apaga el GPS según la actividad activa. Las actividades por tiempo no usan GPS. */
     private suspend fun applyActive() {
+        val dao = AppDb.get(this).dao()
         val active = currentActive()
+        updateRoute(dao, active)
         val wantGps = active != null && active.mode != Mode.TIME
         if (wantGps == gpsOn) return
         if (wantGps) {
@@ -211,6 +234,20 @@ class TrackingService : Service() {
         }
         val staticSec = if (active.mode == Mode.MIXED && !moving) dtSec else 0L
         dao.addActivity(day.id, active.id, dtSec, addMeters, staticSec)
+
+        // Ruta abierta: acumula tiempo, km y kcal, y guarda un punto cada minuto con buena precisión.
+        dao.openRoute()?.takeIf { it.typeId == active.id }?.let { route ->
+            val kcal = Calc.kcalOf(
+                active,
+                DayActivity(dayId = day.id, typeId = active.id, seconds = dtSec, meters = addMeters, staticSeconds = staticSec),
+                s.weightKg
+            )
+            dao.addRouteStats(route.id, dtSec, addMeters, kcal)
+            if (loc.accuracy <= 50f && now - lastRoutePointTs >= 60_000L) {
+                dao.insertPoint(RoutePoint(routeId = route.id, lat = loc.latitude, lng = loc.longitude, time = now))
+                lastRoutePointTs = now
+            }
+        }
         DayController.refreshWidget(this)
     }
 
