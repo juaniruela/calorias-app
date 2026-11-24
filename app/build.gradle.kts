@@ -16,8 +16,6 @@ android {
         versionName = "1.1"
         // Identificador de la compilación (número de ejecución de GitHub Actions) para saber si hay una versión nueva.
         buildConfigField("String", "BUILD_ID", "\"${System.getenv("GITHUB_RUN_ID") ?: "local"}\"")
-        // Clave de Google Maps: se pasa como variable de entorno MAPS_API_KEY (nunca va escrita en el código).
-        manifestPlaceholders["mapsApiKey"] = System.getenv("MAPS_API_KEY") ?: ""
     }
 
     // Clave de depuración fija (en el repo) para que todas las compilaciones se firmen igual
@@ -70,8 +68,6 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     implementation("com.google.android.gms:play-services-location:21.3.0")
-    implementation("com.google.android.gms:play-services-maps:18.2.0")
-    implementation("com.google.maps.android:maps-compose:4.3.3")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("androidx.glance:glance-appwidget:1.1.0")
 }

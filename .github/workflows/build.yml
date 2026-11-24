@@ -26,19 +26,7 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Comprobar clave de Google Maps
-        env:
-          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
-        run: |
-          if [ -z "$MAPS_API_KEY" ]; then
-            echo "::warning title=Falta MAPS_API_KEY::El secreto MAPS_API_KEY no llega a la compilación; el mapa de las rutas saldrá en blanco. Créalo en Settings → Secrets and variables → Actions."
-          else
-            echo "Clave de Maps presente (longitud ${#MAPS_API_KEY})."
-          fi
-
       - name: Build debug APK
-        env:
-          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
         run: gradle :app:assembleDebug --no-daemon
 
       - uses: actions/upload-artifact@v4

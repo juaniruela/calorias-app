@@ -29,7 +29,9 @@ data class Settings(
     val moveThresholdM: Double = 15.0,
     val summaryHour: Int = 23,
     val summaryMinute: Int = 0,
-    val tips: String = DEFAULT_TIPS.joinToString("\n")
+    val tips: String = DEFAULT_TIPS.joinToString("\n"),
+    /** Clave de Google Maps (Maps Static API) para dibujar los recorridos. La introduce el usuario en Ajustes. */
+    val mapsApiKey: String = ""
 )
 
 class SettingsStore(ctx: Context) {
@@ -58,7 +60,8 @@ class SettingsStore(ctx: Context) {
             moveThresholdM = sp.getFloat("moveThresholdM", d.moveThresholdM.toFloat()).toDouble(),
             summaryHour = sp.getInt("summaryHour", d.summaryHour),
             summaryMinute = sp.getInt("summaryMinute", d.summaryMinute),
-            tips = sp.getString("tips", d.tips) ?: d.tips
+            tips = sp.getString("tips", d.tips) ?: d.tips,
+            mapsApiKey = sp.getString("mapsApiKey", "") ?: ""
         )
     }
 
@@ -79,6 +82,7 @@ class SettingsStore(ctx: Context) {
             .putInt("summaryHour", s.summaryHour)
             .putInt("summaryMinute", s.summaryMinute)
             .putString("tips", s.tips)
+            .putString("mapsApiKey", s.mapsApiKey)
             .apply()
     }
 }

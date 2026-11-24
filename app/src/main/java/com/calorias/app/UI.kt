@@ -424,6 +424,7 @@ fun SettingsScreen() {
     var sHour by remember { mutableStateOf(s0.summaryHour.toString()) }
     var sMin by remember { mutableStateOf(s0.summaryMinute.toString()) }
     var tips by remember { mutableStateOf(s0.tips) }
+    var mapsKey by remember { mutableStateOf(s0.mapsApiKey) }
     var showNew by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<ActivityType?>(null) }
     var showNewFood by remember { mutableStateOf(false) }
@@ -448,7 +449,8 @@ fun SettingsScreen() {
             moveThresholdM = moveThr.toDec() ?: s0.moveThresholdM,
             summaryHour = sHour.toIntOrNull()?.coerceIn(0, 23) ?: s0.summaryHour,
             summaryMinute = sMin.toIntOrNull()?.coerceIn(0, 59) ?: s0.summaryMinute,
-            tips = tips
+            tips = tips,
+            mapsApiKey = mapsKey.trim()
         )
         store.save(s)
         SummaryWorker.schedule(ctx, s.summaryHour, s.summaryMinute)
@@ -483,6 +485,13 @@ fun SettingsScreen() {
         Field("Intervalo de lectura GPS (s)", gps) { gps = it; saved = false }
         Field("Intervalo de puntos de la ruta (s)", routePoint) { routePoint = it; saved = false }
         Field("Movimiento mínimo por lectura (m, actividad mixta)", moveThr) { moveThr = it; saved = false }
+
+        Text("Google Maps", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Clave de la Maps Static API para dibujar las rutas. Se guarda solo en este móvil.",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Field("Clave de Google Maps (MAPS_API_KEY)", mapsKey) { mapsKey = it; saved = false }
 
         Text("Reglas de velocidad", style = MaterialTheme.typography.titleMedium)
         Field("Solo bicicleta por encima de (km/h)", fast) { fast = it; saved = false }
