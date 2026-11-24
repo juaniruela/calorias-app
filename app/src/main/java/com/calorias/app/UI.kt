@@ -528,7 +528,12 @@ fun SettingsScreen() {
                     Modifier.weight(1f)
                 )
                 TextButton(onClick = { editing = t }) { Text("Editar") }
-                IconButton(onClick = { scope.launch { dao.deleteType(t) } }) {
+                IconButton(onClick = {
+                    scope.launch {
+                        dao.deleteType(t)
+                        if (dao.openDay() != null) TrackingService.start(ctx)
+                    }
+                }) {
                     Icon(Icons.Default.Delete, contentDescription = "Borrar")
                 }
             }
@@ -561,6 +566,8 @@ fun SettingsScreen() {
                 scope.launch {
                     if (type.isDefault) dao.clearDefault()
                     if (type.id == 0L) dao.insertType(type) else dao.updateType(type)
+                    // Si la actividad activa cambió de modo (p. ej. a «Por tiempo»), el GPS se reajusta.
+                    if (dao.openDay() != null) TrackingService.start(ctx)
                 }
                 showNew = false
                 editing = null

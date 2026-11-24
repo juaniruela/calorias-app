@@ -137,6 +137,9 @@ interface AppDao {
     @Query("SELECT * FROM days WHERE date = :date ORDER BY id DESC LIMIT 1")
     suspend fun lastDayOf(date: String): DayRecord?
 
+    @Query("SELECT * FROM days WHERE endedAt IS NOT NULL ORDER BY id DESC LIMIT 1")
+    suspend fun lastClosedDay(): DayRecord?
+
     @Query("SELECT * FROM days ORDER BY id DESC")
     fun observeDays(): Flow<List<DayRecord>>
 
@@ -217,6 +220,34 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+/** Comidas de serie: nombre, emoticono y kcal por ración (estimación). */
+private val SEED_FOODS = listOf(
+    Triple("Paella", "🥘", 520.0),
+    Triple("Potaje de lentejas", "🍲", 380.0),
+    Triple("Arroz a la cubana con huevo y salchichas", "🍚", 650.0),
+    Triple("Guisado de patatas y carne", "🍖", 600.0),
+    Triple("Alitas de pollo y patatas", "🍗", 800.0),
+    Triple("Trucha al horno", "🐟", 320.0),
+    Triple("Té con leche", "🍵", 100.0)
+)
+
+/** Inserta las comidas de serie sin duplicar las que ya existan con el mismo nombre. */
+private fun seedFoods(db: SupportSQLiteDatabase) {
+    SEED_FOODS.forEach { (name, emoji, kcal) ->
+        db.execSQL(
+            "INSERT INTO food_catalog (name, emoji, kcal) SELECT '$name', '$emoji', $kcal " +
+                "WHERE NOT EXISTS (SELECT 1 FROM food_catalog WHERE name = '$name')"
+        )
+    }
+}
+
+/** v3 -> v4: comidas de serie en el catálogo. */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        seedFoods(db)
+    }
+}
+
 /** v2 -> v3: opción de guardar rutas y tablas de rutas y puntos GPS. */
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -239,7 +270,7 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         ActivityType::class, DayRecord::class, DayActivity::class, FoodEntry::class,
         FoodItem::class, RouteRecord::class, RoutePoint::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDb : RoomDatabase() {
@@ -251,7 +282,7 @@ abstract class AppDb : RoomDatabase() {
 
         fun get(ctx: Context): AppDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(ctx.applicationContext, AppDb::class.java, "calorias.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         // Actividades por defecto. Los usuarios pueden añadir más desde Ajustes.
@@ -259,6 +290,7 @@ abstract class AppDb : RoomDatabase() {
                         db.execSQL("INSERT INTO activity_types (name, emoji, mode, factor, isBike, isRest, isDefault) VALUES ('Andar','🚶','DISTANCE',0.5,0,0,1)")
                         db.execSQL("INSERT INTO activity_types (name, emoji, mode, factor, isBike, isRest, isDefault) VALUES ('Bicicleta','🚴','DISTANCE',0.3,1,0,0)")
                         db.execSQL("INSERT INTO activity_types (name, emoji, mode, factor, isBike, isRest, isDefault) VALUES ('Trabajo sentado','💻','TIME',0.5,0,0,0)")
+                        seedFoods(db)
                     }
                 })
                 .build()

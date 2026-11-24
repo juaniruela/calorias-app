@@ -187,6 +187,9 @@ class TrackingService : Service() {
             stopSelf()
             return
         }
+        // Coherencia: si la actividad activa es por tiempo (o cambió), el GPS se apaga antes de contar nada.
+        applyActive()
+        if (!gpsOn) return
         val s = store.load()
         val now = System.currentTimeMillis()
         val prev = lastLoc

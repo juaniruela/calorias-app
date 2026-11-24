@@ -14,9 +14,27 @@ object DayController {
         val st = SettingsStore(ctx)
         val def = dao.types().firstOrNull { it.isDefault }
         if (def != null) st.activeTypeId = def.id
-        dao.insertDay(DayRecord(date = LocalDate.now().toString(), startedAt = now()))
+        val start = now()
+        accrueRest(dao, start)
+        dao.insertDay(DayRecord(date = LocalDate.now().toString(), startedAt = start))
         TrackingService.start(ctx)
         refreshWidget(ctx)
+    }
+
+    /**
+     * Tiempo entre el fin del último día y el inicio del nuevo: se cuenta como descanso.
+     * El día anterior se extiende hasta ese inicio, así el gasto basal de ese tramo se suma
+     * igual que en el resto de la jornada (más lo que aporte la actividad de descanso).
+     */
+    private suspend fun accrueRest(dao: AppDao, newStart: Long) {
+        val last = dao.lastClosedDay() ?: return
+        val endedAt = last.endedAt ?: return
+        val gapSec = (newStart - endedAt) / 1000
+        if (gapSec <= 0) return
+        dao.types().firstOrNull { it.isRest }?.let { rest ->
+            dao.addActivity(last.id, rest.id, gapSec, 0.0, 0L)
+        }
+        dao.updateDay(last.copy(endedAt = newStart))
     }
 
     suspend fun endDay(ctx: Context) {
