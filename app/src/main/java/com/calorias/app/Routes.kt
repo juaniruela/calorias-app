@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,7 +22,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -36,6 +39,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
@@ -51,27 +55,70 @@ private fun resumenRuta(r: RouteRecord): String =
     "${r.seconds / 60} min · ${Calc.num(r.meters / 1000, 2)} km · " +
         "${Calc.num(Calc.avgKmh(r.meters, r.seconds), 1)} km/h media · ${Calc.num(r.kcal)} kcal"
 
-/** Lista de rutas guardadas, de la más reciente a la más antigua. */
+/** Lista de rutas: una línea por ruta; la flecha despliega el detalle. */
 @Composable
 fun RoutesList(onOpen: (Long) -> Unit) {
     val ctx = LocalContext.current
     val dao = remember { AppDb.get(ctx).dao() }
     val routes by dao.observeRoutes().collectAsState(initial = emptyList())
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Rutas", style = MaterialTheme.typography.titleLarge)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (routes.isEmpty()) {
             Text("Aún no hay rutas. Activa «Guardar rutas» en una actividad por km.")
         }
-        routes.forEach { r ->
-            Card(Modifier.fillMaxWidth().clickable { onOpen(r.id) }) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("${r.typeName} · ${fechaHora(r.startedAt)}", style = MaterialTheme.typography.titleSmall)
-                    Text("Fin: ${r.endedAt?.let { fechaHora(it) } ?: "en curso"}")
-                    Text(resumenRuta(r))
+        routes.forEach { r -> RouteRow(r, onOpen) }
+    }
+}
+
+@Composable
+private fun RouteRow(r: RouteRecord, onOpen: (Long) -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val dao = remember { AppDb.get(ctx).dao() }
+    var expanded by remember(r.id) { mutableStateOf(false) }
+    var confirm by remember(r.id) { mutableStateOf(false) }
+
+    Card {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("${fechaHora(r.startedAt)} · ${r.typeName}", style = MaterialTheme.typography.titleSmall)
+                    Text("${Calc.num(r.meters / 1000, 2)} km · ${Calc.num(r.kcal)} kcal")
+                }
+                Text(
+                    if (expanded) "▴" else "▾",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+            }
+            if (expanded) {
+                Text("Inicio: ${fechaHora(r.startedAt)}")
+                Text("Fin: ${r.endedAt?.let { fechaHora(it) } ?: "en curso"}")
+                Text("${r.seconds / 60} min · ${Calc.num(Calc.avgKmh(r.meters, r.seconds), 1)} km/h media")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Button(onClick = { onOpen(r.id) }) { Text("Ver mapa") }
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = { confirm = true }) { Text("Borrar ruta", color = BAD) }
                 }
             }
         }
+    }
+
+    if (confirm) {
+        ConfirmDialog(
+            text = "¿Borrar esta ruta y sus puntos GPS?",
+            onConfirm = {
+                confirm = false
+                scope.launch {
+                    dao.deletePointsOf(r.id)
+                    dao.deleteRouteRow(r.id)
+                }
+            },
+            onDismiss = { confirm = false }
+        )
     }
 }
 

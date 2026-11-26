@@ -51,8 +51,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val GOOD = Color(0xFF2E7D32)
-private val BAD = Color(0xFFC62828)
+internal val GOOD = Color(0xFF2E7D32)
+internal val BAD = Color(0xFFC62828)
 
 private fun String.toDec(): Double? = replace(',', '.').toDoubleOrNull()
 
@@ -213,7 +213,7 @@ fun HomeScreen() {
 }
 
 @Composable
-private fun StatsCard(s: DaySummary) {
+internal fun StatsCard(s: DaySummary) {
     Card {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             StatRow("Pasos", Calc.num(s.steps.toDouble()))
@@ -235,7 +235,7 @@ private fun StatsCard(s: DaySummary) {
 }
 
 @Composable
-private fun StatRow(label: String, value: String, color: Color = Color.Unspecified) {
+internal fun StatRow(label: String, value: String, color: Color = Color.Unspecified) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label)
         Text(value, color = color)
@@ -247,7 +247,7 @@ private fun StatRow(label: String, value: String, color: Color = Color.Unspecifi
  * en el catálogo al añadir la comida del día.
  */
 @Composable
-private fun MealDialog(
+internal fun MealDialog(
     foods: List<FoodItem>,
     onDismiss: () -> Unit,
     onPick: (FoodItem) -> Unit,
@@ -312,7 +312,7 @@ private fun MealDialog(
 /** Cuadrícula de emoticonos; la seleccionada se resalta. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun EmojiGrid(selected: String, onPick: (String) -> Unit) {
+internal fun EmojiGrid(selected: String, onPick: (String) -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -342,60 +342,6 @@ private fun EmojiGrid(selected: String, onPick: (String) -> Unit) {
 
 // ---------------------------------------------------------------- HISTORIAL
 
-@Composable
-fun HistoryScreen() {
-    val ctx = LocalContext.current
-    val dao = remember { AppDb.get(ctx).dao() }
-    val days by dao.observeDays().collectAsState(initial = emptyList())
-    var openRouteId by remember { mutableStateOf<Long?>(null) }
-
-    val routeId = openRouteId
-    if (routeId != null) {
-        BackHandler { openRouteId = null }
-        RouteMapScreen(routeId = routeId) { openRouteId = null }
-    } else {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text("Historial", style = MaterialTheme.typography.headlineMedium)
-            if (days.isEmpty()) Text("Aún no hay días registrados.")
-            days.forEach { day -> DayHistoryCard(day) }
-            RoutesList { openRouteId = it }
-        }
-    }
-}
-
-@Composable
-private fun DayHistoryCard(day: DayRecord) {
-    val ctx = LocalContext.current
-    val sum by produceState<DaySummary?>(null, day.id, day.endedAt) {
-        value = DayController.summaryOf(ctx, day)
-    }
-    Card {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                "${day.date} · ${Calc.hhmm(day.startedAt)} – " +
-                    (day.endedAt?.let { Calc.hhmm(it) } ?: "en curso"),
-                style = MaterialTheme.typography.titleSmall
-            )
-            sum?.let { s ->
-                Text(
-                    "Pasos ${Calc.num(s.steps.toDouble())} · ${Calc.num(s.meters / 1000, 2)} km · " +
-                        "${s.activeSeconds / 60} min · ${Calc.num(s.avgKmh, 1)} km/h media"
-                )
-                Text("Ingeridas ${Calc.num(s.intakeKcal)} kcal · Gastadas ${Calc.num(s.bmrKcal + s.activityKcal)} kcal")
-                Text(
-                    "Saldo ${Calc.num(s.balanceKcal)} kcal · ${Calc.gramsText(s.gramsChange)}",
-                    color = if (s.gramsChange > 0) BAD else GOOD
-                )
-            }
-        }
-    }
-}
 
 // ---------------------------------------------------------------- AJUSTES
 

@@ -164,6 +164,36 @@ interface AppDao {
     @Delete
     suspend fun deleteFood(f: FoodEntry)
 
+    @Update
+    suspend fun updateFood(f: FoodEntry)
+
+    @Query("UPDATE day_activity SET seconds = :seconds, meters = :meters, staticSeconds = :staticSeconds WHERE dayId = :dayId AND typeId = :typeId")
+    suspend fun setActivity(dayId: Long, typeId: Long, seconds: Long, meters: Double, staticSeconds: Long?)
+
+    @Query("DELETE FROM day_activity WHERE dayId = :dayId AND typeId = :typeId")
+    suspend fun deleteActivity(dayId: Long, typeId: Long)
+
+    @Query("DELETE FROM day_activity WHERE dayId = :dayId")
+    suspend fun deleteActivitiesOf(dayId: Long)
+
+    @Query("DELETE FROM food WHERE dayId = :dayId")
+    suspend fun deleteFoodOf(dayId: Long)
+
+    @Query("DELETE FROM route_points WHERE routeId IN (SELECT id FROM routes WHERE dayId = :dayId)")
+    suspend fun deletePointsOfDay(dayId: Long)
+
+    @Query("DELETE FROM routes WHERE dayId = :dayId")
+    suspend fun deleteRoutesOf(dayId: Long)
+
+    @Query("DELETE FROM days WHERE id = :dayId")
+    suspend fun deleteDayRow(dayId: Long)
+
+    @Query("DELETE FROM route_points WHERE routeId = :routeId")
+    suspend fun deletePointsOf(routeId: Long)
+
+    @Query("DELETE FROM routes WHERE id = :routeId")
+    suspend fun deleteRouteRow(routeId: Long)
+
     @Query("SELECT * FROM food WHERE dayId = :dayId ORDER BY time")
     suspend fun food(dayId: Long): List<FoodEntry>
 
